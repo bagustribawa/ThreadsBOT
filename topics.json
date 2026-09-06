@@ -1,0 +1,20 @@
+{
+  "_petunjuk": "Edit list 'topics' sesuai niche kamu. Bot akan pilih 1 topik acak tiap jadwal posting, lalu generate caption baru berdasarkan topik itu + format yang lagi banyak dipakai di Threads.",
+  "topics": [
+    "cerita random pengalaman kerja sehari-hari",
+    "opini singkat soal tren teknologi/AI",
+    "tips produktivitas ringan",
+    "observasi kocak soal kehidupan sehari-hari di Bali",
+    "pertanyaan interaktif buat mancing komentar",
+    "quote reflektif singkat",
+    "cerita relatable soal media sosial/scrolling habit"
+  ],
+  "formats": [
+    "pertanyaan terbuka ke followers",
+    "pernyataan kontroversial ringan (hot take)",
+    "cerita personal singkat 2-3 kalimat",
+    "list singkat (3 poin) dengan nada santai",
+    "curhat singkat yang relatable"
+  ],
+  "gaya_bahasa": "santai, pakai bahasa Indonesia sehari-hari, boleh sedikit gaul, hindari terlalu formal, jangan pakai hashtag berlebihan"
+}
