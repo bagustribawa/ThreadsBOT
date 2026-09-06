@@ -1,7 +1,10 @@
 """
-Post ke Threads berdasarkan content_calendar.json (sudah di-generate sebelumnya).
-TIDAK memanggil API AI apa pun -- 100% gratis, tinggal ambil caption yang sudah
-disiapkan sesuai tanggal & jam sekarang (waktu WITA).
+Post ke Threads berdasarkan content_calendar.json.
+Didesain robust terhadap keterbatasan GitHub Actions:
+- cron bisa delay atau di-drop saat load tinggi (didokumentasikan resmi oleh GitHub)
+- makanya script ini dipanggil tiap 15 menit, dan window toleransi per slot
+  cukup lebar (90 menit setelah jam target), plus ada state file (posted_log.json)
+  supaya tidak posting dobel untuk slot yang sama.
 """
 import json
 import os
@@ -16,57 +19,80 @@ from threads_client import post_text
 
 BASE_DIR = os.path.dirname(__file__)
 CALENDAR_FILE = os.path.join(BASE_DIR, "content_calendar.json")
+POSTED_LOG_FILE = os.path.join(BASE_DIR, "posted_log.json")
 
 ACCESS_TOKEN = os.environ["THREADS_ACCESS_TOKEN"]
 USER_ID = os.environ["THREADS_USER_ID"]
 
 SLOTS = ["08:00", "12:30", "19:00", "21:30"]
-TOLERANCE_MINUTES = 25  # toleransi keterlambatan GitHub Actions cron
+WINDOW_MINUTES_AFTER = 90  # toleransi: boleh posting sampai 90 menit setelah jam target
 
 
-def load_calendar():
-    with open(CALENDAR_FILE, "r", encoding="utf-8") as f:
+def load_json(path, default):
+    if not os.path.exists(path):
+        return default
+    with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def closest_slot(now_hhmm: str):
-    """Cari slot terdekat dari SLOTS, dalam toleransi TOLERANCE_MINUTES."""
-    now_minutes = int(now_hhmm[:2]) * 60 + int(now_hhmm[3:])
-    best_slot = None
-    best_diff = None
+def save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def already_posted(posted_log, key: str) -> bool:
+    return key in posted_log.get("done", [])
+
+
+def mark_posted(posted_log, key: str):
+    posted_log.setdefault("done", []).append(key)
+    save_json(POSTED_LOG_FILE, posted_log)
+
+
+def find_due_slot(now_wita: datetime.datetime, posted_log: dict):
+    """
+    Cari slot hari ini yang jamnya sudah lewat (dalam window toleransi)
+    tapi belum ditandai sudah posting.
+    """
+    today_str = now_wita.date().isoformat()
     for slot in SLOTS:
-        slot_minutes = int(slot[:2]) * 60 + int(slot[3:])
-        diff = abs(now_minutes - slot_minutes)
-        if best_diff is None or diff < best_diff:
-            best_diff = diff
-            best_slot = slot
-    if best_diff is not None and best_diff <= TOLERANCE_MINUTES:
-        return best_slot
-    return None
+        key = f"{today_str}_{slot}"
+        if already_posted(posted_log, key):
+            continue
+        slot_dt = datetime.datetime.combine(
+            now_wita.date(),
+            datetime.time(int(slot[:2]), int(slot[3:])),
+            tzinfo=now_wita.tzinfo,
+        )
+        minutes_since_slot = (now_wita - slot_dt).total_seconds() / 60
+        if 0 <= minutes_since_slot <= WINDOW_MINUTES_AFTER:
+            return slot, key, today_str
+    return None, None, None
 
 
 def main():
     now_wita = datetime.datetime.now(ZoneInfo("Asia/Makassar"))
-    today_str = now_wita.date().isoformat()
-    now_hhmm = now_wita.strftime("%H:%M")
+    posted_log = load_json(POSTED_LOG_FILE, {"done": []})
 
-    slot = closest_slot(now_hhmm)
+    slot, key, today_str = find_due_slot(now_wita, posted_log)
     if slot is None:
-        print(f"Jam sekarang ({now_hhmm} WITA) tidak dekat slot manapun, skip.")
+        print(f"Jam sekarang {now_wita.strftime('%H:%M')} WITA -- tidak ada slot yang due, skip.")
         return
 
-    calendar = load_calendar()
+    calendar = load_json(CALENDAR_FILE, [])
     match = next((e for e in calendar if e["date"] == today_str and e["slot"] == slot), None)
 
     if match is None:
-        print(f"Tidak ada entry untuk {today_str} slot {slot} di content_calendar.json. "
-              f"Kalender mungkin sudah habis -- perlu di-generate ulang untuk bulan berikutnya.")
+        print(f"Slot {slot} due tapi tidak ada entry di content_calendar.json untuk {today_str}. "
+              f"Kemungkinan kalender sudah habis, perlu generate batch baru.")
         return
 
     caption = match["caption"]
-    print(f"Posting untuk {today_str} slot {slot}: {caption}")
+    print(f"Posting untuk {today_str} slot {slot} (dieksekusi jam {now_wita.strftime('%H:%M')} WITA): {caption}")
     post_id = post_text(USER_ID, ACCESS_TOKEN, caption)
     print(f"Berhasil posting. Post ID: {post_id}")
+
+    mark_posted(posted_log, key)
 
 
 if __name__ == "__main__":
