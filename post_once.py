@@ -25,7 +25,8 @@ ACCESS_TOKEN = os.environ["THREADS_ACCESS_TOKEN"]
 USER_ID = os.environ["THREADS_USER_ID"]
 
 SLOTS = ["08:00", "12:30", "19:00", "21:30"]
-WINDOW_MINUTES_AFTER = 90  # toleransi: boleh posting sampai 90 menit setelah jam target
+WINDOW_MINUTES_AFTER = 420  # toleransi diperlebar lagi jadi 7 jam
+                             # (GitHub throttle cron di repo kecil, delay bisa sampai beberapa jam)
 
 
 def load_json(path, default):
